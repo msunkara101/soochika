@@ -3,7 +3,7 @@
 # Sent as: agentready-bot/<version> (+<contact_url>)
 user_agent: agentready-bot
 # TODO: replace with a real page explaining the bot and how to contact us, before the first crawl.
-contact_url: https://example.org/agentready-bot
+contact_url: https://soochika-bot-page.vercel.app/
 
 # Never below 5: government servers are fragile.
 min_delay_seconds: 5

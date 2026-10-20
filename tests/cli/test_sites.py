@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 
 import pytest
@@ -6,7 +5,8 @@ from typer.testing import CliRunner
 
 from agentready.cli import app
 
-ROOT = Path(__file__).resolve().parents[2]
+from .config_copy import ROOT, copy_repo_config
+
 FIXTURE = ROOT / "tests" / "fixtures" / "site_directory" / "state_web_directory.html"
 PAGE_URL = "https://www.telangana.gov.in/state-web-directory/"
 
@@ -15,7 +15,7 @@ PAGE_URL = "https://www.telangana.gov.in/state-web-directory/"
 def workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A copy of the repo config and an empty data dir, so tests never touch the real ones."""
     config = tmp_path / "config"
-    shutil.copytree(ROOT / "config", config)
+    copy_repo_config(config)
     monkeypatch.chdir(tmp_path)  # keep a real .env out of the test
     monkeypatch.setenv("AGENTREADY_CONFIG_DIR", str(config))
     monkeypatch.setenv("AGENTREADY_DATA_DIR", str(tmp_path / "data"))

@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 
 import pytest
@@ -6,13 +5,13 @@ from typer.testing import CliRunner
 
 from agentready.cli import app
 
-ROOT = Path(__file__).resolve().parents[2]
+from .config_copy import copy_repo_config
 
 
 @pytest.fixture
 def workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     config = tmp_path / "config"
-    shutil.copytree(ROOT / "config", config)
+    copy_repo_config(config)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("AGENTREADY_CONFIG_DIR", str(config))
     monkeypatch.setenv("AGENTREADY_DATA_DIR", str(tmp_path / "data"))
