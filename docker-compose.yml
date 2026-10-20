@@ -5,6 +5,10 @@ services:
       context: .
       target: runtime
     image: agentready:latest
+    # Chromium (accessibility audits) needs an init process to reap its child processes,
+    # and more shared memory than Docker's 64 MB default.
+    init: true
+    shm_size: "1gb"
     env_file:
       - path: .env
         required: false
@@ -22,6 +26,8 @@ services:
       context: .
       target: dev
     image: agentready-dev:latest
+    init: true
+    shm_size: "1gb"
     profiles: ["dev"]
     volumes:
       - ./src:/app/src

@@ -1,6 +1,6 @@
 """Pages found on real department sites that broke the first version of the auditor."""
 
-import time
+import threading
 
 from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
@@ -16,6 +16,12 @@ PAGE = (
 
 def page(title: str, head: str = "", body: str = "") -> str:
     return PAGE.format(title=title, head=head, body=body)
+
+
+# /slow.js is held until the test releases it, then the test waits for it to finish, so
+# the request can't spill into the next test's server log.
+RELEASE = threading.Event()
+FINISHED = threading.Event()
 
 
 def serve(httpserver: HTTPServer) -> None:
@@ -57,19 +63,28 @@ def serve(httpserver: HTTPServer) -> None:
     )
 
     def slow(_request: Request) -> Response:
-        time.sleep(7)
-        return Response("/* late */", content_type="text/javascript")
+        RELEASE.wait(timeout=60)  # far longer than the 5.5 s load budget in the test
+        try:
+            return Response("/* late */", content_type="text/javascript")
+        finally:
+            FINISHED.set()
 
     httpserver.expect_request("/slow.js").respond_with_handler(slow)
 
 
 def test_awkward_pages_are_still_audited(env: AuditEnv, httpserver: HTTPServer) -> None:
+    RELEASE.clear()
+    FINISHED.clear()
     serve(httpserver)
     env.crawl_then_clear(httpserver)
-    report = env.audit(
-        crawl=make_config(request_timeout_seconds=30),
-        audit=audit_config(page_timeout_seconds=0.5, max_requests_per_page=1),
-    )
+    try:
+        report = env.audit(
+            crawl=make_config(request_timeout_seconds=30),
+            audit=audit_config(page_timeout_seconds=0.5, max_requests_per_page=1),
+        )
+    finally:
+        RELEASE.set()
+        FINISHED.wait(timeout=10)
     pages = {p.url.path: p for p in report.pages}
     assert set(pages) == {"/", "/leaves.html", "/amd.html", "/slow.html", "/no-eval.html"}
     assert all(p.ok for p in pages.values()), {k: p.error for k, p in pages.items()}

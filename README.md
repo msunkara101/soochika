@@ -48,3 +48,10 @@ docker compose run --rm dev lint-imports
 
 `./data` and `./config` are mounted into the container, so the database and raw
 files persist on the host.
+
+**Known issue (Docker Desktop on Windows):** under Docker Desktop's WSL2 VM, the Node.js
+process that Playwright uses, and occasionally Chromium, crash at random (roughly 1 start
+in 10; reproduced with nothing but "start Playwright, launch Chromium, close it", and seen
+with both Node 22 and 24). The auditor retries a failed browser start and re-audits a page
+whose browser crashed, so real audits complete. The test suite, though, can show 1-2 random
+failures per Docker run; it passes consistently when run natively (`uv run pytest`).

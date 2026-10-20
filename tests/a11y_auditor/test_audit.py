@@ -173,3 +173,40 @@ def test_missing_axe_build_is_a_clear_error(
     env.crawl_then_clear(httpserver)
     with pytest.raises(AuditError, match="axe-core not found"):
         env.audit(audit=audit_config(axe_path=tmp_path / "missing.js"))
+
+
+def test_a_failed_browser_start_is_retried(
+    env: AuditEnv, httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import agentready.a11y_auditor.audit as audit_module
+
+    real = audit_module.async_playwright
+    starts = []
+
+    def flaky():
+        starts.append(1)
+        if len(starts) == 1:
+            raise Exception("Connection closed while reading from the driver")
+        return real()
+
+    monkeypatch.setattr(audit_module, "async_playwright", flaky)
+    serve(httpserver)
+    env.crawl_then_clear(httpserver)
+    report = env.audit(pages=1)
+    assert len(starts) == 2
+    assert report.pages[0].ok
+
+
+def test_browser_that_never_starts_is_a_clear_error(
+    env: AuditEnv, httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import agentready.a11y_auditor.audit as audit_module
+
+    def broken():
+        raise Exception("Connection closed while reading from the driver")
+
+    monkeypatch.setattr(audit_module, "async_playwright", broken)
+    serve(httpserver)
+    env.crawl_then_clear(httpserver)
+    with pytest.raises(AuditError, match="could not start Chromium after 3 attempts"):
+        env.audit(pages=1)

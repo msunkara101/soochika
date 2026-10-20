@@ -1,6 +1,8 @@
 """Render a site's most important pages in Chromium and run axe-core on each one."""
 
+import contextlib
 import sqlite3
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -35,6 +37,10 @@ from agentready.store import (
     most_linked_pages,
     replace_audit_results,
 )
+
+STARTUP_ATTEMPTS = 3
+PAGE_ATTEMPTS = 2
+"""A page whose browser crashed is tried once more in a fresh browser."""
 
 # Headers that describe the original transfer, not the body we hand back to the browser.
 _DROP_HEADERS = frozenset({"content-encoding", "content-length", "transfer-encoding"})
@@ -118,22 +124,62 @@ async def audit_site(
         clock=clock,
     )
     report = A11yReport(site.id, run.id)
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=True)
-        try:
-            for target in targets:
+    browser_stack = AsyncExitStack()
+    try:
+        browser = await _launch(browser_stack)
+        for target in targets:
+            for attempt in range(1, PAGE_ATTEMPTS + 1):
                 page_result, findings, budget = await _audit_page(
                     browser, raw, site, target, gate, crawl, audit, axe_source, user_agent, clock
                 )
-                report.pages.append(page_result)
-                report.findings.extend(findings)
-                for reason, n in budget.reasons.items():
-                    report.blocked[reason] = report.blocked.get(reason, 0) + n
-        finally:
-            await browser.close()
+                if page_result.ok or attempt == PAGE_ATTEMPTS or not _crashed(page_result):
+                    break
+                # The browser died under this page: start a fresh one and try it again.
+                with contextlib.suppress(Exception):
+                    await browser_stack.aclose()
+                browser_stack = AsyncExitStack()
+                browser = await _launch(browser_stack)
+            report.pages.append(page_result)
+            report.findings.extend(findings)
+            for reason, n in budget.reasons.items():
+                report.blocked[reason] = report.blocked.get(reason, 0) + n
+    finally:
+        with contextlib.suppress(Exception):
+            await browser_stack.aclose()
 
     replace_audit_results(conn, site.id, AuditKind.A11Y, report.pages, report.findings)
     return report
+
+
+_CRASH_MARKERS = ("has been closed", "Connection closed", "Target crashed", "Browser closed")
+
+
+def _crashed(page: AuditedPage) -> bool:
+    return any(marker in (page.error or "") for marker in _CRASH_MARKERS)
+
+
+async def _launch(stack: AsyncExitStack) -> Browser:
+    """Start Playwright and Chromium, retrying a failed start.
+
+    The Playwright driver occasionally dies while starting on some machines (seen under
+    Docker Desktop's WSL2 VM). That costs nothing to retry and would otherwise lose a
+    site's whole audit. Nothing has been sent to the site at this point.
+    """
+    last_error: Exception | None = None
+    for _attempt in range(STARTUP_ATTEMPTS):
+        attempt = AsyncExitStack()
+        try:
+            playwright = await attempt.enter_async_context(async_playwright())
+            browser = await playwright.chromium.launch(headless=True)
+        except Exception as exc:
+            last_error = exc
+            with contextlib.suppress(Exception):
+                await attempt.aclose()
+            continue
+        stack.push_async_callback(attempt.aclose)
+        stack.push_async_callback(browser.close)
+        return browser
+    raise AuditError(f"could not start Chromium after {STARTUP_ATTEMPTS} attempts: {last_error}")
 
 
 async def _audit_page(
@@ -161,13 +207,18 @@ async def _audit_page(
     document = raw.get(target.sha256)
     content_type = target.content_type or "text/html"
 
-    context = await browser.new_context(
-        user_agent=user_agent,
-        bypass_csp=True,  # so axe can be injected into pages with a strict CSP
-        service_workers="block",
-        ignore_https_errors=False,
-    )
+    # Each allowed subresource can take a full host delay, so the load event of a page
+    # with many CSS/JS files takes far longer than in an unthrottled browser.
+    load_budget = audit.page_timeout_seconds + audit.max_requests_per_page * gate.delay
+    note: str | None = None
+    context = None
     try:
+        context = await browser.new_context(
+            user_agent=user_agent,
+            bypass_csp=True,  # so axe can be injected into pages with a strict CSP
+            service_workers="block",
+            ignore_https_errors=False,
+        )
         # Hide AMD/CommonJS globals while axe loads so it always attaches to window.axe.
         await context.add_init_script(
             "(function (define, module, exports) {\n" + axe_source + "\n}).call(window);"
@@ -183,35 +234,32 @@ async def _audit_page(
             )
 
         await page.route("**/*", route)
-        # Each allowed subresource can take a full host delay, so the load event of a
-        # page with many CSS/JS files takes far longer than an unthrottled browser.
-        load_budget = audit.page_timeout_seconds + audit.max_requests_per_page * gate.delay
-        note: str | None = None
+        await page.goto(
+            page_url,
+            wait_until="commit",  # the stored page is served at once; scripts may block parsing
+            timeout=audit.page_timeout_seconds * 1000,
+        )
         try:
-            await page.goto(
-                page_url,
-                wait_until="commit",  # the stored page is served at once; scripts may block parsing
-                timeout=audit.page_timeout_seconds * 1000,
-            )
-            try:
-                await page.wait_for_load_state("load", timeout=load_budget * 1000)
-            except PlaywrightTimeoutError:
-                note = f"load event timed out after {load_budget:.0f}s; audited the page as loaded"
-            await page.wait_for_timeout(audit.settle_seconds * 1000)
-            results = await _run_axe(page, audit.axe_tags)
-        except PlaywrightError as exc:
-            error = str(exc).splitlines()[0][:300]
-            failed = AuditedPage(
-                **base,
-                audited_at=clock.now(),
-                ok=False,
-                error=error,
-                requests_made=budget.made,
-                requests_blocked=budget.blocked,
-            )
-            return failed, [], budget
+            await page.wait_for_load_state("load", timeout=load_budget * 1000)
+        except PlaywrightTimeoutError:
+            note = f"load event timed out after {load_budget:.0f}s; audited the page as loaded"
+        await page.wait_for_timeout(audit.settle_seconds * 1000)
+        results = await _run_axe(page, audit.axe_tags)
+    except PlaywrightError as exc:
+        # Includes a crashed browser; the caller decides whether to retry.
+        failed = AuditedPage(
+            **base,
+            audited_at=clock.now(),
+            ok=False,
+            error=str(exc).splitlines()[0][:300],
+            requests_made=budget.made,
+            requests_blocked=budget.blocked,
+        )
+        return failed, [], budget
     finally:
-        await context.close()
+        if context is not None:
+            with contextlib.suppress(PlaywrightError):
+                await context.close()
 
     audited_at = clock.now()
     findings = findings_from_axe(results, site_id=site.id, url=page_url, audited_at=audited_at)

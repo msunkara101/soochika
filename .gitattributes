@@ -1,0 +1,7 @@
+# Keep line endings stable across Windows and Linux checkouts.
+* text=auto eol=lf
+*.bat text eol=crlf
+
+# Vendored and test-fixture files must stay byte-for-byte as pinned (see vendor/README.md).
+vendor/** -text
+tests/fixtures/** -text
