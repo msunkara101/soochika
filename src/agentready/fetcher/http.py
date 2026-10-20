@@ -25,6 +25,13 @@ from agentready.crawl_policy import (
 from agentready.fetcher.clock import Clock
 
 REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
+TRANSIENT_ERRORS = (
+    httpx.TimeoutException,
+    httpx.RemoteProtocolError,  # "Server disconnected without sending a response"
+    httpx.ReadError,
+    httpx.WriteError,
+)
+"""Retried with backoff, like 5xx responses. Connection and TLS failures are not."""
 MAX_RETRY_AFTER_SECONDS = 600
 
 
@@ -72,6 +79,9 @@ class PoliteClient:
             timeout=config.request_timeout_seconds,
             follow_redirects=False,
             verify=True,
+            # One connection per request: with 5+ seconds between requests, reuse saves
+            # nothing, and servers that close idle connections after ~5 s drop the request.
+            limits=httpx.Limits(max_keepalive_connections=0),
             transport=transport,
         )
         self._last_request: dict[str, datetime] = {}
@@ -110,7 +120,8 @@ class PoliteClient:
         may_follow: Callable[[str], str | None] | None = None,
     ) -> FetchResult:
         """GET ``url``, following redirects that ``may_follow`` allows (it returns a refusal
-        reason, or None to follow). Retries 5xx responses and timeouts with backoff.
+        reason, or None to follow). Retries 5xx responses, timeouts and dropped
+        connections with backoff.
         """
         current = url
         redirects = 0
@@ -154,11 +165,24 @@ class PoliteClient:
         conditional: dict[str, str],
     ) -> FetchResult | tuple[int, str]:
         await self._wait_turn(current)
+        try:
+            return await self._send(url, current, keep_body, conditional)
+        finally:
+            # The host's delay counts from when it finished answering, not from when we asked.
+            self._last_request[_host_key(current)] = self.clock.now()
+
+    async def _send(
+        self,
+        url: str,
+        current: str,
+        keep_body: Callable[[str | None, str], bool],
+        conditional: dict[str, str],
+    ) -> FetchResult | tuple[int, str]:
         request = self._client.build_request("GET", current, headers=conditional)
         try:
             response = await self._client.send(request, stream=True)
-        except httpx.TimeoutException as exc:
-            raise _Retry("timeout") from exc
+        except TRANSIENT_ERRORS as exc:
+            raise _Retry(_transient(exc)) from exc
         except httpx.HTTPError as exc:
             return FetchResult(url, current, error=describe_error(exc))
 
@@ -202,8 +226,8 @@ class PoliteClient:
                         url, current, **meta, error=f"file too large: over {limit} bytes"
                     )
             return FetchResult(url, current, **meta, body=bytes(body))
-        except httpx.TimeoutException as exc:
-            raise _Retry("timeout") from exc
+        except TRANSIENT_ERRORS as exc:
+            raise _Retry(_transient(exc), status_code=response.status_code) from exc
         except httpx.HTTPError as exc:
             return FetchResult(url, current, response.status_code, error=describe_error(exc))
         finally:
@@ -240,6 +264,10 @@ def describe_error(exc: BaseException) -> str:
     if isinstance(exc, httpx.TooManyRedirects):
         return "too many redirects"
     return f"{type(exc).__name__}: {exc}"
+
+
+def _transient(exc: BaseException) -> str:
+    return "timeout" if isinstance(exc, httpx.TimeoutException) else describe_error(exc)
 
 
 def _chain(exc: BaseException) -> list[BaseException]:

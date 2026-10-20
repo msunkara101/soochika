@@ -1,12 +1,14 @@
 """Network failures a local test server can't produce: TLS errors, timeouts, streamed bodies."""
 
 import ssl
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 
 from agentready.fetcher import describe_error
+from agentready.store import list_links
 
 from .conftest import Env, html, make_config
 
@@ -106,3 +108,70 @@ def test_describe_error_finds_ssl_cause_anywhere_in_the_chain() -> None:
     assert describe_error(httpx.ConnectError("refused", request=request)).startswith(
         "connect_error"
     )
+
+
+def test_dropped_connection_is_retried(env: Env) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if calls.count("/") == 1:
+            raise httpx.RemoteProtocolError(
+                "Server disconnected without sending a response.", request=request
+            )
+        return httpx.Response(200, html=html())
+
+    env.crawl(transport=httpx.MockTransport(handler))
+    home = env.by_path()["/"]
+    assert home.status_code == 200
+    assert home.error is None
+    assert calls.count("/") == 2
+
+
+def test_dropped_connection_every_time_is_recorded(env: Env) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        raise httpx.RemoteProtocolError("Server disconnected", request=request)
+
+    env.crawl(transport=httpx.MockTransport(handler))
+    error = env.by_path()["/"].error
+    assert error == "RemoteProtocolError: Server disconnected after 3 attempts"
+
+
+def test_delay_counts_from_the_end_of_a_slow_response(env: Env) -> None:
+    """A 30-second download is followed by a full 5-second rest before the next request."""
+    received: list[tuple[str, float]] = []
+    start = env.clock.now()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        received.append((request.url.path, (env.clock.now() - start).total_seconds()))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/":
+            env.clock.current += timedelta(seconds=30)  # the server takes 30 s to answer
+            return httpx.Response(200, html=html("/next.html"))
+        return httpx.Response(200, html=html())
+
+    env.crawl(transport=httpx.MockTransport(handler))
+    times = dict(received)
+    assert times["/next.html"] - times["/"] >= 30 + 5
+
+
+def test_app_downloads_are_never_requested(env: Env) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(200, html=html("/apps/KisanSuvidha.apk", "/setup.msi", "/a.TIFF"))
+
+    report = env.crawl(transport=httpx.MockTransport(handler))
+    assert calls == ["/robots.txt", "/"]
+    assert report.run.id is not None
+    links = list_links(env.conn, report.run.id)
+    assert len(links) == 3
+    assert not any(link.in_scope for link in links)  # recorded, but never queued
