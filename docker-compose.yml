@@ -1,0 +1,29 @@
+services:
+  # The agentready CLI. Example: docker compose run --rm agentready version
+  agentready:
+    build:
+      context: .
+      target: runtime
+    image: agentready:latest
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      AGENTREADY_DATA_DIR: /app/data
+      AGENTREADY_DB_PATH: /app/data/agentready.db
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+
+  # Tests and checks. Example: docker compose run --rm dev
+  #                            docker compose run --rm dev lint-imports
+  dev:
+    build:
+      context: .
+      target: dev
+    image: agentready-dev:latest
+    profiles: ["dev"]
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./config:/app/config

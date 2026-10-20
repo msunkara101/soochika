@@ -1,0 +1,47 @@
+# The site list. Reviewed by a human: tools may propose sites (see
+# `agentready sites propose`, which writes data/proposed_sites.yaml) but never edit this file.
+#
+# id:         lowercase slug; by convention the subdomain of <sub>.telangana.gov.in
+# kind:       department | district | other
+# languages:  te | en | ur | hi (the languages the site publishes in)
+# active:     optional, default true; set false to stop crawling without losing history
+#
+# Seed list (2026-10-20). URLs were checked against the State Web Directory
+# (https://www.telangana.gov.in/state-web-directory/). Confirm each one in a browser
+# before the first crawl.
+
+sites:
+  - id: it
+    name: Information Technology, Electronics & Communications Department
+    department: Information Technology, Electronics & Communications
+    base_url: https://it.telangana.gov.in/
+    kind: department
+    languages: [en, te]
+
+  - id: transport
+    name: Transport Department
+    department: Transport
+    base_url: https://transport.telangana.gov.in/
+    kind: department
+    languages: [en, te]
+
+  - id: agri
+    name: Department of Agriculture
+    department: Agriculture and Co-operation
+    base_url: https://agri.telangana.gov.in/
+    kind: department
+    languages: [en, te]
+
+  - id: schooledu
+    name: School Education Department
+    department: School Education
+    base_url: https://schooledu.telangana.gov.in/
+    kind: department
+    languages: [en, te]
+
+  - id: pred
+    name: Panchayat Raj Engineering Department
+    department: Panchayat Raj and Rural Development
+    base_url: https://pred.telangana.gov.in/
+    kind: department
+    languages: [en, te]

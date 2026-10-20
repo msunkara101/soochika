@@ -1,0 +1,22 @@
+# Scorecard weights. Higher weight = a failing check costs more points.
+
+# Agent-readiness checks (see docs/ARCHITECTURE.md). high = 3, medium = 2, info = 0.5
+check_weights:
+  AR001: 3    # robots.txt blocks AI agents
+  AR002: 2    # no sitemap.xml
+  AR003: 3    # scanned PDFs with no text layer
+  AR004: 3    # CAPTCHA on an information page
+  AR005: 3    # main content needs JavaScript
+  AR006: 2    # missing or wrong lang attribute
+  AR007: 2    # text published as images
+  AR008: 2    # broken internal links above 5%
+  AR009: 2    # notice listings without dates
+  AR010: 3    # HTTPS missing or TLS errors
+  AR011: 0.5  # no llms.txt
+
+# Accessibility: weight per axe-core impact level.
+axe_impact_weights:
+  critical: 4
+  serious: 3
+  moderate: 2
+  minor: 1

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>agentready-bot: what it is and how to control it</title>
+  <meta name="description" content="agentready-bot reads public pages of Telangana government websites, slowly and politely, to build an accessibility and agent-readiness scorecard. How it behaves, how to block it and how to reach us.">
+  <meta name="robots" content="index, follow">
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #ffffff;
+      --text: #1a1a1a;
+      --muted: #4a4a4a;
+      --link: #0b57d0;
+      --link-visited: #6a1b9a;
+      --rule: #d0d0d0;
+      --code-bg: #f3f3f3;
+      --note-bg: #fff8e1;
+      --note-border: #8a6d00;
+      --focus: #b3261e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121212;
+        --text: #ececec;
+        --muted: #c4c4c4;
+        --link: #8ab4f8;
+        --link-visited: #d7aefb;
+        --rule: #3a3a3a;
+        --code-bg: #1f1f1f;
+        --note-bg: #2a2410;
+        --note-border: #e0c45c;
+        --focus: #ffb4ab;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { font-size: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Telugu", sans-serif;
+      line-height: 1.6;
+    }
+    .skip {
+      position: absolute;
+      left: -999em;
+    }
+    .skip:focus {
+      left: 1rem;
+      top: 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg);
+      color: var(--text);
+      outline: 3px solid var(--focus);
+    }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    header, main, footer {
+      max-width: 44rem;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+    header { padding-top: 2rem; }
+    h1 { font-size: 2rem; line-height: 1.25; margin: 0 0 0.5rem; }
+    h2 { font-size: 1.375rem; margin: 2.25rem 0 0.5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+    p, ul, ol { margin: 0.5rem 0 1rem; }
+    li { margin: 0.25rem 0; }
+    .lead { font-size: 1.125rem; color: var(--muted); margin-top: 0; }
+    a { color: var(--link); text-underline-offset: 0.15em; }
+    a:visited { color: var(--link-visited); }
+    a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+    code, pre {
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 0.9375rem;
+      background: var(--code-bg);
+    }
+    code { padding: 0.1em 0.3em; border-radius: 3px; overflow-wrap: anywhere; }
+    pre { padding: 0.75rem 1rem; border-radius: 4px; overflow-x: auto; }
+    pre code { padding: 0; background: none; }
+    .note {
+      background: var(--note-bg);
+      border-left: 4px solid var(--note-border);
+      padding: 0.75rem 1rem;
+      margin: 1rem 0;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; }
+    th, td { text-align: left; vertical-align: top; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--rule); }
+    th { font-weight: 600; }
+    footer { padding-top: 2rem; padding-bottom: 3rem; color: var(--muted); font-size: 0.9375rem; }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to main content</a>
+
+  <header>
+    <h1>agentready-bot</h1>
+    <p class="lead">A slow, polite crawler that reads the <strong>public</strong> pages of Telangana government department and district websites.</p>
+  </header>
+
+  <main id="main">
+    <div class="note" role="note">
+      <p><strong>This is an independent project.</strong> It is not run by, or affiliated with, the Government of Telangana or any of its departments.</p>
+    </div>
+
+    <h2 id="what">What it does</h2>
+    <p>agentready-bot reads pages and documents that any visitor can open without logging in. We use them to:</p>
+    <ul>
+      <li>produce an <strong>accessibility scorecard</strong> for each site (GIGW 3.0 and WCAG 2.1 level AA), with a list of suggested fixes;</li>
+      <li>check how easily AI assistants can read and cite the site, for example whether PDFs have a text layer and whether notices carry dates;</li>
+      <li>offer an unofficial, accessible reading view in Telugu, English and Urdu. It always links back to the official page.</li>
+    </ul>
+    <p>Every piece of text we keep is stored with its official source address and the date we read it.</p>
+
+    <h2 id="identify">How to recognise it</h2>
+    <p>Every request sends this <code>User-Agent</code> header, where <code>&lt;version&gt;</code> is the software version and the link points to this page:</p>
+    <pre><code>agentready-bot/&lt;version&gt; (+https://this-page-address/)</code></pre>
+    <p>The robots.txt name to use is <code>agentready-bot</code>.</p>
+
+    <h2 id="rules">The rules it follows</h2>
+    <table>
+      <caption class="visually-hidden">Crawler behaviour</caption>
+      <thead>
+        <tr><th scope="col">Rule</th><th scope="col">What it means for your server</th></tr>
+      </thead>
+      <tbody>
+        <tr><th scope="row">robots.txt</th><td>Read before anything else and obeyed, including <code>Crawl-delay</code>. If robots.txt returns a server error or doesn't respond, the bot fetches nothing from your site in that run.</td></tr>
+        <tr><th scope="row">Speed</th><td>One request at a time, at most one every 5 seconds per website. A longer <code>Crawl-delay</code> in robots.txt is honoured.</td></tr>
+        <tr><th scope="row">Hours</th><td>Normally runs only overnight, between 22:00 and 06:00 India Standard Time. Occasional manual checks outside those hours keep the same 5-second limit.</td></tr>
+        <tr><th scope="row">Volume</th><td>At most 500 pages per website per run, and no file larger than 50&nbsp;MB.</td></tr>
+        <tr><th scope="row">Repeat visits</th><td>Uses <code>If-None-Match</code> and <code>If-Modified-Since</code>, so unchanged files cost you a short <code>304 Not Modified</code> reply instead of a full download.</td></tr>
+        <tr><th scope="row">Scope</th><td>Stays on the website being checked. Fetches web pages, PDFs and office documents only; skips images, scripts, archives and video.</td></tr>
+        <tr><th scope="row">Retries</th><td>After a server error or timeout it waits (10 seconds, then 20) and tries at most twice more. It honours <code>Retry-After</code>.</td></tr>
+        <tr><th scope="row">Never</th><td>Never submits forms, logs in, solves CAPTCHAs, or tries to get around any access control. Never turns off certificate checks: a certificate problem is recorded as a finding, and nothing from that site is fetched.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="control">How to slow it down or block it</h2>
+    <p>Add rules to your site's <code>/robots.txt</code>. The bot reads robots.txt again at the start of every run.</p>
+    <p>Block it completely:</p>
+    <pre><code>User-agent: agentready-bot
+Disallow: /</code></pre>
+    <p>Keep it out of some folders:</p>
+    <pre><code>User-agent: agentready-bot
+Disallow: /admin/
+Disallow: /internal/</code></pre>
+    <p>Ask it to wait longer between requests (seconds):</p>
+    <pre><code>User-agent: agentready-bot
+Crawl-delay: 30</code></pre>
+    <p>If you would rather not edit robots.txt, write to us (below) and we will stop crawling your site by hand.</p>
+
+    <h2 id="contact">Contact, corrections and removal</h2>
+    <p>Write to <a href="mailto:bhargav.mohith101@gmail.com">bhargav.mohith101@gmail.com</a> to:</p>
+    <ul>
+      <li>report a problem with the bot, such as too many requests or wrong pages;</li>
+      <li>ask us to stop crawling your site, or to remove what we have collected from it;</li>
+      <li>correct something in a scorecard, or ask how a score was worked out.</li>
+    </ul>
+    <p>Please include your website's address. We aim to reply within 3 working days, and we act on stop and removal requests as soon as we read them.</p>
+  </main>
+
+  <footer>
+    <p>agentready-bot · independent project · this page last updated <time datetime="2026-10-20">20 October 2026</time></p>
+  </footer>
+</body>
+</html>

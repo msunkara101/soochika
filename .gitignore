@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environment (created by `uv sync`)
+.venv/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+
+# Local configuration
+.env
+
+# Pipeline output: raw files, SQLite DB, reports
+data/*
+!data/.gitkeep

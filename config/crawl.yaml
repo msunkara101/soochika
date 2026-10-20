@@ -1,0 +1,39 @@
+# Crawl rules. See CLAUDE.md "Crawling rules" before changing anything here.
+
+# Sent as: agentready-bot/<version> (+<contact_url>)
+user_agent: agentready-bot
+# TODO: replace with a real page explaining the bot and how to contact us, before the first crawl.
+contact_url: https://example.org/agentready-bot
+
+# Never below 5: government servers are fragile.
+min_delay_seconds: 5
+max_pages_per_site: 500
+max_file_mb: 50
+
+allowed_content_types:
+  - text/html
+  - application/xhtml+xml
+  - application/pdf
+  - application/msword
+  - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+  - application/vnd.ms-excel
+  - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+# Crawl overnight, India time. start > end means the window crosses midnight.
+crawl_window:
+  start: "22:00"
+  end: "06:00"
+  timezone: Asia/Kolkata
+
+# Crawler-trap limits: URLs beyond these are skipped as out of scope.
+max_url_length: 500
+max_query_params: 3
+max_path_depth: 12
+max_segment_repeats: 2   # /a/b/a/b/a/b repeats "a" three times: skipped
+
+# Fetching
+max_depth: 3                 # link hops from the home page (documents one hop deeper)
+request_timeout_seconds: 30
+max_retries: 2               # extra attempts after a 5xx or a timeout
+retry_backoff_seconds: 10    # doubles each retry; never shorter than the host delay
+max_redirects: 5
