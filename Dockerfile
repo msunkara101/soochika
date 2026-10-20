@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12-slim AS base
+# Playwright's official image (Ubuntu 24.04, Python 3.12, Chromium and its system libraries).
+# Keep the tag in step with the playwright version in uv.lock. On Docker Desktop's WSL2 VM,
+# Playwright's Node.js driver crashed ~1 start in 10 on python:3.12-slim and ~1 in 200 on this.
+ARG PLAYWRIGHT_VERSION=1.64.0
+FROM mcr.microsoft.com/playwright/python:v${PLAYWRIGHT_VERSION}-noble AS base
 
 COPY --from=ghcr.io/astral-sh/uv:0.6.6 /uv /uvx /usr/local/bin/
 

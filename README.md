@@ -49,9 +49,13 @@ docker compose run --rm dev lint-imports
 `./data` and `./config` are mounted into the container, so the database and raw
 files persist on the host.
 
-**Known issue (Docker Desktop on Windows):** under Docker Desktop's WSL2 VM, the Node.js
-process that Playwright uses, and occasionally Chromium, crash at random (roughly 1 start
-in 10; reproduced with nothing but "start Playwright, launch Chromium, close it", and seen
-with both Node 22 and 24). The auditor retries a failed browser start and re-audits a page
-whose browser crashed, so real audits complete. The test suite, though, can show 1-2 random
-failures per Docker run; it passes consistently when run natively (`uv run pytest`).
+**Docker Desktop on Windows:** the images are based on Playwright's official image
+(`mcr.microsoft.com/playwright/python`, Ubuntu 24.04), whose tag must match the playwright
+version in `uv.lock` (`PLAYWRIGHT_VERSION` in the `Dockerfile`). On the earlier
+`python:3.12-slim` base, Playwright's Node.js driver, Chromium and even Python itself
+segfaulted at random under Docker Desktop's WSL2 VM (about 1 browser start in 10), which
+made 1-2 tests fail per run. On the Playwright base it is about 1 start in 200, the
+auditor retries those, and the suite passes. If random crashes come back, check the host
+before the code: a custom WSL kernel (`kernel=` in `%UserProfile%\.wslconfig`; remove the
+line and run `wsl --shutdown` to go back to Microsoft's kernel) and Intel 13th/14th-gen
+CPU instability (update the BIOS for microcode 0x12B or later) both cause exactly this.
