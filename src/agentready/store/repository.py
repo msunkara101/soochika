@@ -13,9 +13,12 @@ from typing import Any
 from pydantic import AnyUrl, BaseModel
 
 from agentready.core import (
+    AuditedPage,
     AuditFinding,
+    AuditKind,
     Chunk,
     CrawlRun,
+    CrawlStatus,
     Document,
     FetchedResource,
     Link,
@@ -147,6 +150,15 @@ def get_crawl_run(conn: sqlite3.Connection, run_id: int) -> CrawlRun | None:
     return _one(CrawlRun, row)
 
 
+def latest_finished_crawl_run(conn: sqlite3.Connection, site_id: str) -> CrawlRun | None:
+    row = conn.execute(
+        "SELECT * FROM crawl_runs WHERE site_id = ? AND status = ? "
+        "ORDER BY started_at DESC, id DESC LIMIT 1",
+        (site_id, CrawlStatus.FINISHED.value),
+    ).fetchone()
+    return _one(CrawlRun, row)
+
+
 def list_crawl_runs(conn: sqlite3.Connection, site_id: str) -> list[CrawlRun]:
     """Newest first."""
     rows = conn.execute(
@@ -178,6 +190,45 @@ def latest_fetched_resource(
         (site_id, url),
     ).fetchone()
     return _one(FetchedResource, row)
+
+
+def get_fetched_in_run(
+    conn: sqlite3.Connection, crawl_run_id: int, url: str
+) -> FetchedResource | None:
+    """The row for ``url`` (as requested) in one crawl run, e.g. its robots.txt."""
+    row = conn.execute(
+        "SELECT * FROM fetched_resources WHERE crawl_run_id = ? AND url = ? ORDER BY id LIMIT 1",
+        (crawl_run_id, url),
+    ).fetchone()
+    return _one(FetchedResource, row)
+
+
+def most_linked_pages(
+    conn: sqlite3.Connection, crawl_run_id: int, *, limit: int, exclude: Iterable[str] = ()
+) -> list[tuple[FetchedResource, int]]:
+    """HTML pages stored in a crawl run, most linked-to first (by number of linking pages).
+
+    Only pages that were fetched and stored as HTML count; documents and errors don't.
+    Ties are broken by URL so the choice is repeatable.
+    """
+    excluded = list(exclude)
+    not_in = f" AND r.url NOT IN ({', '.join('?' * len(excluded))})" if excluded else ""
+    rows = conn.execute(
+        "SELECT r.*, count(DISTINCT l.from_resource_id) AS inbound "
+        "FROM fetched_resources r JOIN links l "
+        "  ON l.crawl_run_id = r.crawl_run_id AND l.url = r.url AND l.in_scope = 1 "
+        "WHERE r.crawl_run_id = ? AND r.sha256 IS NOT NULL "
+        "  AND (r.content_type LIKE 'text/html%' OR r.content_type LIKE 'application/xhtml+xml%')"
+        f"{not_in} "
+        "GROUP BY r.id ORDER BY inbound DESC, r.url LIMIT ?",
+        [crawl_run_id, *excluded, limit],
+    ).fetchall()
+    result = []
+    for row in rows:
+        data = dict(row)
+        inbound = data.pop("inbound")
+        result.append((FetchedResource.model_validate(data), inbound))
+    return result
 
 
 def list_fetched_resources(
@@ -322,6 +373,61 @@ def list_audit_findings(
         sql += f" AND check_id IN ({', '.join('?' * len(ids))})"
         params += ids
     return [_audit_finding(row) for row in conn.execute(sql + " ORDER BY id", params)]
+
+
+_AGENT_GLOB = "AR[0-9][0-9][0-9]"
+
+
+def replace_audit_results(
+    conn: sqlite3.Connection,
+    site_id: str,
+    kind: AuditKind,
+    pages: Iterable[AuditedPage],
+    findings: Iterable[AuditFinding],
+) -> None:
+    """Swap a site's previous results of one kind (a11y or agent) for new ones, atomically.
+
+    Results of the other kind are left alone.
+    """
+    page_rows = [_row_values(page) for page in pages]
+    finding_rows = [_row_values(finding) for finding in findings]
+    for page in page_rows:
+        if page["site_id"] != site_id or page["kind"] != kind.value:
+            raise ValueError(f"audited page {page['url']} is not a {kind} result for {site_id}")
+    agent = "" if kind is AuditKind.AGENT else "NOT "
+    with conn:
+        conn.execute(
+            f"DELETE FROM audit_findings WHERE site_id = ? AND {agent}check_id GLOB ?",
+            (site_id, _AGENT_GLOB),
+        )
+        conn.execute(
+            "DELETE FROM audited_pages WHERE site_id = ? AND kind = ?", (site_id, kind.value)
+        )
+        for row in finding_rows:
+            if AuditFinding.model_validate(row).kind is not kind or row["site_id"] != site_id:
+                raise ValueError(f"finding {row['check_id']} is not a {kind} result for {site_id}")
+        conn.executemany(
+            "INSERT INTO audit_findings "
+            "(site_id, url, check_id, severity, message, evidence, audited_at) "
+            "VALUES (:site_id, :url, :check_id, :severity, :message, :evidence, :audited_at)",
+            finding_rows,
+        )
+        conn.executemany(
+            "INSERT INTO audited_pages (site_id, kind, url, audited_at, ok, error, violations, "
+            "requests_made, requests_blocked) VALUES (:site_id, :kind, :url, :audited_at, :ok, "
+            ":error, :violations, :requests_made, :requests_blocked)",
+            page_rows,
+        )
+
+
+def list_audited_pages(
+    conn: sqlite3.Connection, site_id: str, kind: AuditKind
+) -> list[AuditedPage]:
+    rows = conn.execute(
+        "SELECT * FROM audited_pages WHERE site_id = ? AND kind = ? ORDER BY id",
+        (site_id, kind.value),
+    )
+    return _all(AuditedPage, rows)
 
 
 def delete_audit_findings(

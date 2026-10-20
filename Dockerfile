@@ -16,8 +16,11 @@ WORKDIR /app
 FROM base AS runtime
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
+# Chromium for the accessibility auditor (plus the system libraries it needs)
+RUN playwright install --with-deps chromium
 COPY src ./src
 COPY config ./config
+COPY vendor ./vendor
 RUN uv sync --frozen --no-dev
 ENTRYPOINT ["agentready"]
 CMD ["--help"]
@@ -26,6 +29,7 @@ CMD ["--help"]
 FROM base AS dev
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-install-project
+RUN playwright install --with-deps chromium
 COPY . .
 RUN uv sync --frozen
 CMD ["pytest"]

@@ -39,6 +39,7 @@ def config_dir(tmp_path: Path) -> Path:
     path.mkdir()
     (path / "crawl.yaml").write_text(CRAWL_YAML, encoding="utf-8")
     (path / "scoring.yaml").write_text(SCORING_YAML, encoding="utf-8")
+    (path / "audit.yaml").write_text("pages_per_site: 4", encoding="utf-8")
     return path
 
 
@@ -144,3 +145,23 @@ def test_repository_config_files_are_valid() -> None:
     s = Settings(config_dir=REPO_CONFIG, _env_file=None)
     assert s.crawl.min_delay_seconds >= 5
     assert set(s.scoring.check_weights) == {f"AR{n:03d}" for n in range(1, 12)}
+
+
+def test_audit_settings(config_dir: Path) -> None:
+    s = Settings(config_dir=config_dir, _env_file=None)
+    assert s.audit.pages_per_site == 4
+    assert s.audit.axe_tags == ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]  # default
+
+
+@pytest.mark.parametrize(
+    ("yaml_text", "error"),
+    [
+        ("pages_per_site: 0", "pages_per_site"),
+        ("axe_tags: []", "axe_tags"),
+        ("headless: false", "headless"),
+    ],
+)
+def test_bad_audit_values(config_dir: Path, yaml_text: str, error: str) -> None:
+    (config_dir / "audit.yaml").write_text(yaml_text, encoding="utf-8")
+    with pytest.raises(ValidationError, match=error):
+        Settings(config_dir=config_dir, _env_file=None)

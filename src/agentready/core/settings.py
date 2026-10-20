@@ -22,6 +22,7 @@ from agentready.core.enums import AxeImpact
 DEFAULT_CONFIG_DIR = Path("config")
 CRAWL_FILE = "crawl.yaml"
 SCORING_FILE = "scoring.yaml"
+AUDIT_FILE = "audit.yaml"
 SITES_FILE = "sites.yaml"
 PROPOSED_SITES_FILE = "proposed_sites.yaml"
 
@@ -84,6 +85,22 @@ class CrawlConfig(_Config):
         return f"{self.user_agent}/{version} (+{self.contact_url})"
 
 
+class AuditConfig(_Config):
+    """How the accessibility auditor renders pages (config/audit.yaml)."""
+
+    pages_per_site: int = Field(default=10, ge=1)
+    """The home page plus the most-linked pages from the latest crawl."""
+    page_timeout_seconds: float = Field(default=60, gt=0)
+    settle_seconds: float = Field(default=1.0, ge=0)
+    """Wait after the load event, for scripts that build the page."""
+    max_requests_per_page: int = Field(default=30, ge=0)
+    """Subresources fetched from the site's server per page (each one is rate-limited)."""
+    resource_types: list[str] = Field(default=["stylesheet", "script", "xhr", "fetch"])
+    """Playwright resource types worth loading. Images, fonts and media never are."""
+    axe_path: Path = Path("vendor/axe.min.js")
+    axe_tags: list[str] = Field(default=["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"], min_length=1)
+
+
 class ScoringConfig(_Config):
     check_weights: dict[ArCheckId, Weight]
     axe_impact_weights: dict[AxeImpact, Weight]
@@ -115,8 +132,8 @@ class Settings(BaseSettings):
     """Application settings.
 
     Paths and secrets come from ``AGENTREADY_*`` environment variables or ``.env``;
-    crawl and scoring rules come from ``<config_dir>/crawl.yaml`` and
-    ``<config_dir>/scoring.yaml``. Values passed to the constructor win over both.
+    crawl, scoring and audit rules come from ``crawl.yaml``, ``scoring.yaml`` and
+    ``audit.yaml`` in ``config_dir``. Values passed to the constructor win over both.
     """
 
     model_config = SettingsConfigDict(
@@ -136,6 +153,7 @@ class Settings(BaseSettings):
     )
     crawl: CrawlConfig
     scoring: ScoringConfig
+    audit: AuditConfig
 
     @field_validator("db_path", "tesseract_cmd", mode="before")
     @classmethod
@@ -153,6 +171,7 @@ class Settings(BaseSettings):
         data = dict(data)
         data.setdefault("crawl", _read_yaml(config_dir / CRAWL_FILE))
         data.setdefault("scoring", _read_yaml(config_dir / SCORING_FILE))
+        data.setdefault("audit", _read_yaml(config_dir / AUDIT_FILE))
         return data
 
     @model_validator(mode="after")

@@ -1,6 +1,7 @@
 """Pydantic models, enums and the settings loader. No I/O beyond reading config."""
 
 from agentready.core.enums import (
+    AuditKind,
     AxeImpact,
     ChangeStatus,
     CrawlStatus,
@@ -10,6 +11,7 @@ from agentready.core.enums import (
     SiteKind,
 )
 from agentready.core.models import (
+    AuditedPage,
     AuditFinding,
     Chunk,
     Citation,
@@ -20,10 +22,19 @@ from agentready.core.models import (
     Site,
     SiteScore,
 )
-from agentready.core.settings import CrawlConfig, CrawlWindow, ScoringConfig, Settings
+from agentready.core.settings import (
+    AuditConfig,
+    CrawlConfig,
+    CrawlWindow,
+    ScoringConfig,
+    Settings,
+)
 
 __all__ = [
+    "AuditConfig",
     "AuditFinding",
+    "AuditKind",
+    "AuditedPage",
     "AxeImpact",
     "ChangeStatus",
     "Chunk",

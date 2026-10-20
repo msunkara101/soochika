@@ -44,6 +44,13 @@ class CrawlStatus(StrEnum):
     FAILED = "failed"
 
 
+class AuditKind(StrEnum):
+    A11Y = "a11y"
+    """WCAG findings from axe-core (check ids are axe rule ids)."""
+    AGENT = "agent"
+    """Agent-readiness checks AR001-AR011."""
+
+
 class Severity(StrEnum):
     """Severity of an audit finding (agent-readiness checks and mapped axe impacts)."""
 

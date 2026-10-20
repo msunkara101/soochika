@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "audit_findings",
     "site_scores",
     "links",
+    "audited_pages",
     "schema_migrations",
 }
 
@@ -38,10 +39,11 @@ def test_packaged_migrations_are_numbered_from_one() -> None:
 
 def test_migrate_creates_schema_and_is_idempotent(tmp_path: Path) -> None:
     conn = connect(tmp_path / "nested" / "dir" / "agentready.db")
-    assert migrate(conn) == [1, 2]
+    every_version = [m.version for m in load_migrations()]
+    assert migrate(conn) == every_version
     assert tables(conn) >= EXPECTED_TABLES
     assert migrate(conn) == []
-    assert applied_versions(conn) == [1, 2]
+    assert applied_versions(conn) == every_version
     conn.close()
 
 

@@ -1,0 +1,13 @@
+# Accessibility audit (agentready audit a11y). Pages are rendered in Chromium from the
+# copy stored by the last crawl, so the page itself is not downloaded again. Only the
+# CSS and JavaScript it needs come from the site's server, rate-limited and obeying
+# robots.txt like any other request. Images, fonts, media and other hosts are blocked.
+
+pages_per_site: 10            # home page + the most-linked pages from the latest crawl
+page_timeout_seconds: 60
+settle_seconds: 1.0           # wait after "load" for scripts that build the page
+max_requests_per_page: 30     # CSS/JS fetched from the site per page; the rest are blocked
+resource_types: [stylesheet, script, xhr, fetch]
+
+axe_path: vendor/axe.min.js   # pinned axe-core build, see vendor/README.md
+axe_tags: [wcag2a, wcag2aa, wcag21a, wcag21aa]   # WCAG 2.1 levels A and AA

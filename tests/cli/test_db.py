@@ -4,7 +4,7 @@ import pytest
 from typer.testing import CliRunner
 
 from agentready.cli import app
-from agentready.store import applied_versions, connect
+from agentready.store import applied_versions, connect, load_migrations
 
 REPO_CONFIG = Path(__file__).resolve().parents[2] / "config"
 
@@ -22,7 +22,8 @@ def test_db_init_creates_and_migrates(db_path: Path) -> None:
     runner = CliRunner()
     first = runner.invoke(app, ["db", "init"])
     assert first.exit_code == 0, first.output
-    assert "Applied migrations 0001, 0002" in first.stdout
+    every_version = [m.version for m in load_migrations()]
+    assert f"Applied migrations {', '.join(f'{v:04d}' for v in every_version)}." in first.stdout
     assert db_path.is_file()
 
     second = runner.invoke(app, ["db", "init"])
@@ -30,7 +31,7 @@ def test_db_init_creates_and_migrates(db_path: Path) -> None:
     assert "already up to date" in second.stdout
 
     conn = connect(db_path)
-    assert applied_versions(conn) == [1, 2]
+    assert applied_versions(conn) == every_version
     conn.close()
 
 

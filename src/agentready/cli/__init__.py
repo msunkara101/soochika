@@ -1,6 +1,7 @@
 """Command-line entry point (`agentready`). Wires commands together; no logic of its own."""
 
 import asyncio
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
@@ -9,6 +10,7 @@ import typer
 from pydantic import ValidationError
 
 from agentready import __version__
+from agentready.a11y_auditor import AuditError, audit_site
 from agentready.core import CrawlConfig, Settings, Site
 from agentready.fetcher import FetchError, crawl_site, fetch_page, without_crawl_window
 from agentready.site_directory import (
@@ -25,7 +27,9 @@ app = typer.Typer(help="Agent-ready Telangana pipeline.", no_args_is_help=True)
 db_app = typer.Typer(help="Database commands.", no_args_is_help=True)
 sites_app = typer.Typer(help="The site list (config/sites.yaml).", no_args_is_help=True)
 app.add_typer(db_app, name="db")
+audit_app = typer.Typer(help="Audit sites from the latest crawl.", no_args_is_help=True)
 app.add_typer(sites_app, name="sites")
+app.add_typer(audit_app, name="audit")
 
 
 def _settings() -> Settings:
@@ -74,6 +78,11 @@ def _crawl_config(settings: Settings, ignore_window: bool) -> CrawlConfig:
 @app.callback()
 def main() -> None:
     """Agent-ready Telangana pipeline."""
+    # Windows consoles often can't show Telugu or other characters found in page text:
+    # print a replacement character instead of crashing.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
 
 
 @app.command()
@@ -226,3 +235,63 @@ def crawl(
             )
     finally:
         conn.close()
+
+
+# --- audit ----------------------------------------------------------------------
+
+
+@audit_app.command("a11y")
+def audit_a11y(
+    site: Annotated[str, typer.Option("--site", help="Site id from sites.yaml.")],
+    pages: Annotated[
+        int | None,
+        typer.Option("--pages", min=1, help="Pages to audit (default from config/audit.yaml)."),
+    ] = None,
+    ignore_window: IgnoreWindow = False,
+) -> None:
+    """WCAG 2.1 A/AA audit (axe-core) of the home page and most-linked pages."""
+    settings = _settings()
+    target = next((s for s in _sites(settings) if s.id == site), None)
+    if target is None:
+        typer.echo(f"Unknown site id {site!r}. See `agentready sites list`.", err=True)
+        raise typer.Exit(code=2)
+    config = _crawl_config(settings, ignore_window)
+    user_agent = config.user_agent_header(__version__)
+
+    conn = connect(settings.db_path)
+    try:
+        migrate(conn)
+        try:
+            report = asyncio.run(
+                audit_site(
+                    conn,
+                    RawStore(settings.data_dir),
+                    target,
+                    config,
+                    settings.audit,
+                    user_agent=user_agent,
+                    pages=pages,
+                )
+            )
+        except AuditError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+    finally:
+        conn.close()
+
+    typer.echo(
+        f"Audited {len(report.pages)} page(s) of {site} from crawl run {report.crawl_run_id}:"
+    )
+    for page in report.pages:
+        status = f"{page.violations} rule(s) failed" if page.ok else f"NOT AUDITED: {page.error}"
+        typer.echo(
+            f"  {status:<22} {page.url}  "
+            f"[{page.requests_made} fetched, {page.requests_blocked} blocked]"
+        )
+    by_rule: dict[str, int] = {}
+    for finding in report.findings:
+        by_rule[finding.check_id] = by_rule.get(finding.check_id, 0) + 1
+    for rule, count in sorted(by_rule.items(), key=lambda item: (-item[1], item[0])):
+        typer.echo(f"  {count:>3} page(s): {rule}")
+    blocked = ", ".join(f"{k} {v}" for k, v in sorted(report.blocked.items())) or "none"
+    typer.echo(f"Not loaded: {blocked}")

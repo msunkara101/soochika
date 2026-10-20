@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!--
+  Hand-made fixture with known WCAG 2.1 A/AA failures, one per rule:
+  html-has-lang, document-title, image-alt, label, link-name, button-name, color-contrast.
+  It also references a robots.txt-disallowed stylesheet, an image and a third-party
+  script, none of which the auditor may load.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/private/hidden.css">
+  <script src="https://cdn.example.org/tracker.js"></script>
+</head>
+<body>
+  <img src="/images/circular-12.jpg">
+  <a href="/other.html"><img src="/images/arrow.png"></a>
+  <p style="color: #aaaaaa; background-color: #ffffff">Last date for applications: 31-10-2026</p>
+  <form action="/apply">
+    <input type="text" name="aadhaar">
+    <button type="button"></button>
+  </form>
+</body>
+</html>

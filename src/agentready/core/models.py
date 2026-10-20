@@ -1,11 +1,13 @@
 """Typed records passed between modules. Validation only; no I/O."""
 
+import re
 from datetime import date
 from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl
 
 from agentready.core.enums import (
+    AuditKind,
     ChangeStatus,
     CrawlStatus,
     DocType,
@@ -21,6 +23,7 @@ Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 CheckId = Annotated[str, Field(min_length=1, max_length=100)]
 Score = Annotated[float, Field(ge=0, le=100)]
+AGENT_CHECK_ID = re.compile(r"^AR\d{3}$")
 
 
 class _Model(BaseModel):
@@ -131,6 +134,30 @@ class AuditFinding(_Model):
     message: NonEmptyStr
     evidence: str | None = None
     audited_at: AwareDatetime
+
+    @property
+    def kind(self) -> AuditKind:
+        return AuditKind.AGENT if AGENT_CHECK_ID.match(self.check_id) else AuditKind.A11Y
+
+
+class AuditedPage(_Model):
+    """One page an auditor looked at, whether or not it found problems."""
+
+    id: int | None = None
+    site_id: SiteId
+    kind: AuditKind
+    url: HttpUrl
+    audited_at: AwareDatetime
+    ok: bool
+    """False when the page could not be audited (load failure, timeout)."""
+    error: str | None = None
+    """Why the page was not audited; when ``ok``, a caveat (e.g. it only partly loaded)."""
+    violations: int = Field(default=0, ge=0)
+    """Number of distinct rules the page failed."""
+    requests_made: int = Field(default=0, ge=0)
+    """Subresources (CSS, JS) fetched from the site's server for this page."""
+    requests_blocked: int = Field(default=0, ge=0)
+    """Subresources not loaded: other hosts, images, fonts, robots.txt-disallowed, over cap."""
 
 
 class SiteScore(_Model):

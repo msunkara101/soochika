@@ -27,6 +27,7 @@ payspace/
     sites.yaml        # the site list (reviewed by a human)
     crawl.yaml        # rate limits, page caps, user agent, contact URL
     scoring.yaml      # check weights for the scorecard
+    audit.yaml        # how the accessibility auditor renders pages
   src/agentready/
     core/  store/  site_directory/  crawl_policy/  fetcher/
     a11y_auditor/  agent_auditor/  scorecard/
@@ -86,6 +87,7 @@ class ChangeStatus(StrEnum): NEW = "new"; UNCHANGED = "unchanged"; CHANGED = "ch
 class CrawlStatus(StrEnum): RUNNING = "running"; FINISHED = "finished"; FAILED = "failed"
 class Severity(StrEnum): CRITICAL; HIGH; MEDIUM; LOW; INFO
 class AxeImpact(StrEnum): MINOR; MODERATE; SERIOUS; CRITICAL
+class AuditKind(StrEnum): A11Y = "a11y"; AGENT = "agent"
 
 class Site:              # id (slug), name, department, base_url, kind, languages, active
 class CrawlRun:          # id, site_id, started_at, finished_at, status, pages_fetched, error_count, stop_reason
@@ -98,7 +100,8 @@ class Document:          # id, site_id, resource_id, source_url, title, departme
                          # change_status, superseded_by
 class Chunk:             # id, document_id, ordinal, heading, text
 class Citation:          # source_url, department, title, published_on, last_checked, unofficial=True
-class AuditFinding:      # site_id, url, check_id, severity, message, evidence, audited_at
+class AuditFinding:      # site_id, url, check_id, severity, message, evidence, audited_at (kind derived from check_id)
+class AuditedPage:       # site_id, kind, url, audited_at, ok, error, violations, requests_made, requests_blocked
 class SiteScore:         # site_id, accessibility, agent_readiness, overall, computed_at
 ```
 
@@ -106,7 +109,7 @@ Every API and MCP response that returns content includes a `Citation`.
 
 ## Storage (v1: SQLite)
 
-Tables mirror the models: `sites`, `fetched_resources`, `documents`, `chunks`, `chunks_fts` (FTS5, `unicode61` tokenizer; test Telugu tokenization early and switch to the `trigram` tokenizer if recall is poor), `audit_findings`, `site_scores`, `crawl_runs`, `links`. Migrations are numbered SQL files in `src/agentready/store/migrations/` (`0001_initial.sql`, ...); `chunks_fts` arrives with the index task (T15).
+Tables mirror the models: `sites`, `fetched_resources`, `documents`, `chunks`, `chunks_fts` (FTS5, `unicode61` tokenizer; test Telugu tokenization early and switch to the `trigram` tokenizer if recall is poor), `audit_findings`, `site_scores`, `crawl_runs`, `links`, `audited_pages`. Migrations are numbered SQL files in `src/agentready/store/migrations/` (`0001_initial.sql`, ...); `chunks_fts` arrives with the index task (T15).
 
 Raw files live on disk at `data/raw/<sha256[:2]>/<sha256>` so identical files are stored once.
 
@@ -130,4 +133,5 @@ Raw files live on disk at `data/raw/<sha256[:2]>/<sha256>` so identical files ar
 
 - `config/crawl.yaml`: `user_agent`, `contact_url`, `min_delay_seconds: 5`, `max_pages_per_site: 500`, `max_file_mb: 50`, `allowed_content_types`, `crawl_window` (for example 22:00–06:00 IST), URL trap limits (`max_url_length`, `max_query_params`, `max_path_depth`, `max_segment_repeats`)
 - `config/scoring.yaml`: weight per check ID and per axe impact level
+- `config/audit.yaml`: pages per site, page timeout, per-page request cap, resource types the browser may load, axe-core path and WCAG tags
 - `.env`: `AGENTREADY_DATA_DIR`, `AGENTREADY_DB_PATH`, `TESSERACT_CMD` (Windows path), LLM provider keys for the evaluation only
